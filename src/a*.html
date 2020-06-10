@@ -1,0 +1,377 @@
+<html>
+    <head>
+
+
+    </head>
+
+
+    <body>
+        <script src="http://cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"> </script> 
+        <script src="https://d3js.org/d3-array.v2.min.js"></script>
+        <script src="js/zoom.js"></script>
+    </body>
+
+    <script>
+    	var width =window.screen.width;
+		var height = window.screen.height;
+		var node_size = 50
+		var start = 0;
+		var z = 0;
+		var end = 0;
+		var cgtext;
+		var cn;
+		var cg;
+		var cf;
+		var ch;
+		var nx;
+		var ny;
+		var startclicked = 0;
+		var endclicked = 0;
+		var startpos = [];
+		var snpos = [];
+		var enpos = [];
+		var endpos = [];
+		var del = 0;
+		var clear = 0;
+		var r = Raphael(0, 0, width, height);//xywh
+		var mouseDown = 0;
+		document.addEventListener('contextmenu', event => event.preventDefault())
+		document.body.onmousedown = function() { 
+		  ++mouseDown;
+		}
+		document.body.onmouseup = function() {
+		  --mouseDown;
+		}
+
+		function distance(x,y,a,b){
+		    return (Math.abs(x-a) + Math.abs(y-b))
+        }
+
+		let Node = class{
+			constructor(x,y,g,f,h,parent,wall){
+				this.x = x
+				this.y = y
+				this.g = g
+				this.f = f
+				this.h = h
+				this.parent = parent
+				this.wall = wall
+			}
+			find_children(mgrid){
+				var oknodes = []
+                var mx = this.x
+                var my = this.y
+				var anode = [[mx,my+node_size],
+                            [mx,my-node_size],
+                            [mx+node_size,my],
+                            [mx - node_size,my]]
+				for (var i=0;i<4;i++){
+					if ((anode[i][0]>=0 && anode[i][0]<=width) && (anode[i][1] >= 0 && anode[i][1] <= height)){
+                        console.log(mgrid[anode[i][0]/node_size][anode[i][1]/node_size].wall)
+						if (!((mgrid[anode[i][0]/node_size][anode[i][1]/node_size]).wall === true)){
+							var nn = new Node(anode[i][0],anode[i][1],0,0,0,0,false)
+							oknodes.push(nn)
+						}
+					}
+				}
+				console.log(oknodes)
+				return oknodes
+			}
+		}
+        class MinHeap{
+            constructor(selector) {
+                this.items = [];
+                this.selector = selector;
+            }
+          
+            seek() { return this.items[0]; }
+            push(item) {
+                let i = this.items.length;
+                this.items.push(item);
+                while (i > 0 && this.selector(this.items[Math.floor((i + 1) / 2 - 1)]) > this.selector(this.items[i])) {
+                    let t = this.items[i];
+                    this.items[i] = this.items[Math.floor((i+1)/2-1)];
+                    this.items[Math.floor((i+1)/2-1)] = t;
+                    i = Math.floor((i + 1) / 2 - 1);
+                }
+            }
+            pop() {
+                if (this.items.length <= 1) return this.items.pop();
+                const ret = this.items[0];
+                this.items[0] = this.items.pop();
+                let i = 0;
+                while (true) {
+                    let lowest = this.selector(this.items[(i + 1) * 2]) < this.selector(this.items[(i + 1) * 2 - 1]) 
+                        ? (i + 1) * 2 : (i + 1) * 2 - 1;
+                    if (this.selector(this.items[i]) > this.selector(this.items[lowest])) {
+                        let t = this.items[i];
+                        this.items[i] = this.items[lowest];
+                        this.items[lowest] = t;
+                        i = lowest             
+                    } else break;
+                }
+                return ret;
+            }
+            delete(item) {
+                let i = this.items.indexOf(item);
+                // heapify
+                this.items[i] = this.items.pop();
+                while (true) {
+                    let lowest = this.selector(this.items[(i + 1) * 2]) < this.selector(this.items[(i + 1) * 2 - 1]) 
+                        ? (i + 1) * 2 : (i + 1) * 2 - 1;
+                    if (this.selector(this.items[i]) > this.selector(this.items[lowest])) {
+                        let t = this.items[i];
+                        this.items[i] = this.items[lowest];
+                        this.items[lowest] = t;
+                        i = lowest             
+                    } else break;
+                }
+            }
+            heapify(arr) {
+                for (let i = 0; i < arr.length; i++) {
+                    this.push(arr[i]);
+                }
+            }
+        }
+
+		let Grid = class{
+			constructor(ns,grid = [],openlist = [],closedlist = []){
+				this.ns = ns
+				this.grid = grid
+                this.openlist = openlist
+                this.closedlist = closedlist
+			}
+			create(){
+				//create the grid
+				for (var i=0;i<(width+this.ns)/50;i++){
+					var temp = [];
+                    //(Math.floor(width/this.ns))
+					for (var n=0;n<(height+this.ns)/50; n++){
+						var nn = new Node(i*this.ns,n*this.ns,0,0,0,0,false)
+						temp.push(nn)
+					}
+					this.grid.push(temp)
+				}
+				return this.grid
+			}
+			show(){
+				//display the grid using raphael
+				grid.create()
+				for (var i=0;i<this.grid.length;i++){
+					for (var n=0;n<this.grid[i].length;n++){
+						var current = this.grid[i][n]
+						var shape = r.rect(current.x, current.y, this.ns, this.ns)
+                    		.attr({fill: "#ffffff"})
+                    		.mousedown(function(){
+                    			//wall color
+                    			if (start === 1){
+                    				if (startclicked === 1){
+                    					r.getById(startpos[0]).animate({ fill: "#ffffff"}, 500);
+                    					this.animate({ fill: "#0723f5"}, 500);
+                    					startpos = []
+                                        snpos = []
+                    					startpos.push(this.id)
+                                        var data = r.getById(startpos[0]).attrs
+                                        snpos.push([data.x,data.y])
+                    					start = 0
+                    				}else{
+                    					startclicked = 1
+                    					startpos.push(this.id)
+                                        snpos.push([this.attrs.x,this.attrs.y])
+                    					this.animate({ fill: "#0723f5"}, 500);
+                    					start = 0
+                    				}
+                    			}else if (end === 1){
+                    				if (endclicked === 1){
+                    					r.getById(endpos[0]).animate({ fill: "#ffffff"}, 500);
+                    					this.animate({ fill: "#f71900"}, 500);
+                    					endpos = []
+                                        enpos = []
+                    					endpos.push(this.id)
+                                        var data2 = r.getById(endpos[0]).attrs
+                                        enpos.push([data2.x,data2.y])
+                    					end = 0
+                    				}else{
+                    					endclicked = 1
+                    					endpos.push(this.id)
+                                        enpos.push([this.attrs.x,this.attrs.y])
+                    					this.animate({ fill: "#f71900"}, 500);
+                    					end = 0
+                    				}
+                    			}else if (del === 1){
+                    				this.animate({ fill: "#ffffff"}, 500);
+                                    var ccnode = r.getById(this.id)
+                                    nx = ccnode.attrs.x
+                                    ny = ccnode.attrs.y
+                                    grid.grid[(nx/node_size)][(ny/node_size)].wall = false;
+                    				del = 0
+                    			}else{
+                    				this.animate({ fill: "#1b1c1b"}, 500);
+                                    var ccnode = r.getById(this.id)
+                                    nx = ccnode.attrs.x
+                                    ny = ccnode.attrs.y
+                                    grid.grid[(nx/node_size)][(ny/node_size)].wall = true;
+                    			}
+		                    })
+		                    .mouseover(function(){
+		                    	if (mouseDown === 1){
+		                    		if (del == 1){
+		                    			this.animate({ fill: "#ffffff"}, 500);
+                                        var ccnode = r.getById(this.id)
+                                        nx = ccnode.attrs.x
+                                        ny = ccnode.attrs.y
+                                        grid.grid[(nx/node_size)][(ny/node_size)].wall = false;
+                    					del = 0
+		                    		}else{
+		                    			this.animate({ fill: "#1b1c1b"}, 500);
+                                        var ccnode = r.getById(this.id)
+                                        nx = ccnode.attrs.x
+                                        ny = ccnode.attrs.y
+                                        grid.grid[(nx/node_size)][(ny/node_size)].wall = true;
+		                    		}
+		                    	}
+		                    })
+		                    .id = ([[current.x.toString() + current.y.toString()],[current.g,current.f,current.h]])
+		            cg = current.g
+		            cf = current.f
+		            ch = current.h
+                	// var cgtext = r.text(current.x + 10,current.y + 10,cg.toString());
+                	// cgtext.node.setAttribute("class","noselect")
+                	// var chtext = r.text(current.x + node_size - 10,current.y + 10,ch.toString());
+                	// chtext.node.setAttribute("class","noselect")
+                	// var cftext = r.text(current.x + 25,(current.y + 25),cf.toString());
+                	// cftext.attr({ "font-size": 14});
+                	// cftext.node.setAttribute("class","noselect")
+					}
+				}
+			}
+			findpath(){
+				//find the shortest path
+                if ((startpos.length > 0) && (endpos.length > 0)){
+                    var currentnode = new Node(snpos[0][0],snpos[0][1],0,0,0,0,true)
+                    this.openlist.push(currentnode)
+                    var inter = setInterval(() =>{
+                        var heap = new MinHeap(x => x);
+                        var temp = [];
+                        for (var i = 0;i<this.openlist.length;i++){
+                            temp.push(this.openlist[i].f)
+                            heap.push(this.openlist[i].f)
+                        }
+                        var tq = heap.seek()
+                        //find the min of temp
+                        var index = temp.indexOf(tq)
+                        //setting new current node
+                        var q = this.openlist[index]
+                        //filling the node
+                        // if (q.x!=snpos[0][0] && q.y!=snpos[0][1] && q.x!=enpos[0][0] && q.y!=enpos[0][1]){
+                        //     var shape = r.rect(q.x, q.y, this.ns, this.ns)
+                        //     .attr({fill: "#f5f542"});
+                        // }
+                        //remove q from the openlist and put it in the closedlist
+                        this.openlist.splice(this.openlist.indexOf(q),1)
+                        this.closedlist.push(q)
+                        //if the current node is the end node
+                        // if (q.x === enpos[0][0] && q.y == enpos[0][1]){
+                        //     console.log("path found... starting backtrack...")
+                        //     clearInterval(inter);
+                        //     var temp = q;
+                        //     var path = []
+                        //     var inter2 = setInterval(() => {
+                        //         var startshape = r.rect(snpos[0][0], snpos[0][1], this.ns, this.ns)
+                        //         .attr({fill: "#0723f5"});
+                        //         var endshape = r.rect(enpos[0][0], enpos[0][1], this.ns, this.ns)
+                        //         .attr({fill: "#f71900"});
+                        //         if (temp.parent){
+                        //            var backshape = r.rect(temp.parent.x, temp.parent.y, this.ns, this.ns)
+                        //             .attr({fill: "#f0fc03"}); 
+                        //             temp = temp.parent 
+                        //         }
+                        //     },50);
+                        // }
+                        var children = q.find_children(this.grid)
+                        //looping over the children
+                        for (var i=0;i<children.length;i++){
+                            var child = children[i]
+                            var startshape = r.rect(snpos[0][0], snpos[0][1], this.ns, this.ns)
+                            .attr({fill: "#0723f5"});
+                            var endshape = r.rect(enpos[0][0], enpos[0][1], this.ns, this.ns)
+                            .attr({fill: "#f71900"});
+                            var shape2 = r.rect(child.x, child.y, this.ns, this.ns)
+                            .attr({fill: "#4dfaa4"});
+                            //do something
+                            if (child.x === enpos[0][0] && child.y == enpos[0][1]){
+                                console.log("path found... starting backtrack...")
+                                clearInterval(inter);
+                                var temp = child;
+                                var path = []
+                                var inter2 = setInterval(() => {
+                                    var startshape = r.rect(snpos[0][0], snpos[0][1], this.ns, this.ns)
+                                    .attr({fill: "#0723f5"});
+                                    var endshape = r.rect(enpos[0][0], enpos[0][1], this.ns, this.ns)
+                                    .attr({fill: "#f71900"});
+                                    if (temp.parent){
+                                       var backshape = r.rect(temp.parent.x, temp.parent.y, this.ns, this.ns)
+                                        .attr({fill: "#f0fc03"}); 
+                                        temp = temp.parent 
+                                    }
+                                },50);
+                            }
+                            if (this.closedlist.includes(child)){
+                                continue
+                            }
+                            //setting stuff
+                            child.g = q.g + 1
+                            child.h = distance(child.x/node_size,child.y/node_size,enpos[0][0]/node_size,enpos[0][1]/node_size)
+                            child.f = child.g + child.h
+                            child.parent = q
+                            //checking if the child is already in the openlist
+                            for (var z =0;z<this.openlist.length;z++){
+                                var node = this.openlist[z]
+                                if (child.x === node.x && child.y === node.y){
+                                    //if its less than what is in the openlist already
+                                    if (child.g > node.g){
+                                        continue
+                                    }else{
+                                        this.openlist.splice(this.openlist.indexOf(node),1)
+                                    }
+                                }
+                            }
+                            this.openlist.push(child)
+                        }
+                    },50);
+                }
+			}
+		}
+		grid = new Grid(node_size)
+		grid.show()
+
+		function handlepress(e){
+            if (`${e.code}` === 'KeyS'){
+                start = 1;
+            }else if (`${e.code}` === 'KeyE'){
+                end = 1;
+            }else if (`${e.code}` === 'KeyC'){
+            	location.reload()
+			}else if (`${e.code}` === 'KeyD'){
+                del = 1;	
+            }else if (`${e.code}` === 'KeyG'){
+                grid.findpath()
+            }
+        }
+        document.addEventListener('keypress',handlepress)
+
+    </script>
+
+    <style>
+        /* In order to prevent the text from being highlighted*/
+        body{
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+
+</html>
